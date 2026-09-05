@@ -238,6 +238,33 @@
   .settings-row span{font-size:15px;}
   .link-btn{background:none;border:none;color:var(--gold);font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;}
 
+  /* Search rows for favorites / seen list */
+  .search-row{display:flex; gap:8px; margin-bottom:14px;}
+  .search-row input[type=text]{margin-bottom:0; flex:1;}
+  .btn-add{
+    padding:0 18px; border-radius:12px; border:none; background:var(--gold);
+    color:#1b1503; font-weight:700; font-family:'Inter',sans-serif; cursor:pointer; font-size:15px;
+  }
+  .btn-add:disabled{opacity:.4;}
+  .search-status{font-size:13px; color:var(--muted); margin:-8px 0 12px;}
+  .list-empty{font-size:14px; color:var(--muted); padding:4px 0;}
+  .toggle-row{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:14px 16px; margin-bottom:22px;
+  }
+  .toggle-row span{font-size:15px;}
+  .switch{
+    width:44px; height:26px; border-radius:100px; background:var(--surface-alt);
+    border:1px solid var(--line); position:relative; cursor:pointer; flex-shrink:0;
+  }
+  .switch::after{
+    content:''; position:absolute; top:2px; left:2px; width:20px; height:20px;
+    border-radius:50%; background:var(--muted); transition:transform .15s, background .15s;
+  }
+  .switch.on{background:var(--gold-dim); border-color:var(--gold);}
+  .switch.on::after{transform:translateX(18px); background:var(--gold);}
+
   .spinner{
     width:22px; height:22px; border-radius:50%;
     border:3px solid var(--line); border-top-color:var(--gold);
@@ -295,6 +322,11 @@
       <div class="chip selected" data-value="egal">Egal</div>
     </div>
 
+    <div class="toggle-row" id="fav-toggle-row" style="display:none;">
+      <span>Bevorzugt meine Favorit:innen</span>
+      <div class="switch" id="fav-toggle"></div>
+    </div>
+
     <button class="btn-primary" id="quiz-start">Vorschläge zeigen</button>
   </div>
 
@@ -324,6 +356,24 @@
         <button class="link-btn" id="reset-history">Zurücksetzen</button>
       </div>
     </div>
+    <h2 class="serif" style="font-size:19px; margin:28px 0 12px;">Lieblings-Schauspieler:innen</h2>
+    <p class="hint" style="margin-bottom:12px;">Werden bei „Entdecken" bevorzugt vorgeschlagen, wenn du den Schalter dort aktivierst.</p>
+    <div class="search-row">
+      <input type="text" id="actor-input" placeholder="Name eingeben, z. B. Denzel Washington">
+      <button class="btn-add" id="actor-add">+</button>
+    </div>
+    <div class="search-status" id="actor-status" style="display:none;"></div>
+    <div id="actor-list"></div>
+
+    <h2 class="serif" style="font-size:19px; margin:28px 0 12px;">Bereits gesehen</h2>
+    <p class="hint" style="margin-bottom:12px;">Titel, die du hier einträgst, tauchen nicht mehr bei „Entdecken" auf.</p>
+    <div class="search-row">
+      <input type="text" id="seen-input" placeholder="Film- oder Serientitel eingeben">
+      <button class="btn-add" id="seen-add">+</button>
+    </div>
+    <div class="search-status" id="seen-status" style="display:none;"></div>
+    <div id="seen-list"></div>
+
     <p class="hint" style="margin-top:18px;">Deine Merkliste und dein Verlauf werden nur auf diesem Gerät gespeichert.</p>
   </div>
 
@@ -354,7 +404,10 @@
   let apiKey = null;
   let watchlist = [];
   let seen = [];
-  let filters = { type:'both', mood:'entspannt', time:'egal' };
+  let favoriteActors = [];
+  let manualSeen = [];
+  let genreScore = {};
+  let filters = { type:'both', mood:'entspannt', time:'egal', useFavorites:false };
   let queue = [];
   let qIndex = 0;
   let fetchingMore = false;
@@ -383,6 +436,18 @@
       const raw = localStorage.getItem(LS_PREFIX+'seen');
       seen = raw ? JSON.parse(raw) : [];
     }catch(e){ seen = []; }
+    try{
+      const raw = localStorage.getItem(LS_PREFIX+'favoriteActors');
+      favoriteActors = raw ? JSON.parse(raw) : [];
+    }catch(e){ favoriteActors = []; }
+    try{
+      const raw = localStorage.getItem(LS_PREFIX+'manualSeen');
+      manualSeen = raw ? JSON.parse(raw) : [];
+    }catch(e){ manualSeen = []; }
+    try{
+      const raw = localStorage.getItem(LS_PREFIX+'genreAffinity');
+      genreScore = raw ? JSON.parse(raw) : {};
+    }catch(e){ genreScore = {}; }
   }
   async function saveSettings(){
     try{ localStorage.setItem(LS_PREFIX+'settings', JSON.stringify({apiKey})); }catch(e){}
@@ -392,6 +457,15 @@
   }
   async function saveSeen(){
     try{ localStorage.setItem(LS_PREFIX+'seen', JSON.stringify(seen)); }catch(e){}
+  }
+  async function saveFavoriteActors(){
+    try{ localStorage.setItem(LS_PREFIX+'favoriteActors', JSON.stringify(favoriteActors)); }catch(e){}
+  }
+  async function saveManualSeen(){
+    try{ localStorage.setItem(LS_PREFIX+'manualSeen', JSON.stringify(manualSeen)); }catch(e){}
+  }
+  async function saveGenreScore(){
+    try{ localStorage.setItem(LS_PREFIX+'genreAffinity', JSON.stringify(genreScore)); }catch(e){}
   }
 
   // ---------- setup ----------
@@ -433,6 +507,155 @@
     renderLoading();
     buildQueue(true);
   });
+  $('#fav-toggle').addEventListener('click', ()=>{
+    filters.useFavorites = !filters.useFavorites;
+    $('#fav-toggle').classList.toggle('on', filters.useFavorites);
+  });
+  function refreshFavToggleVisibility(){
+    const row = $('#fav-toggle-row');
+    if(favoriteActors.length > 0){
+      row.style.display = 'flex';
+    } else {
+      row.style.display = 'none';
+      filters.useFavorites = false;
+      $('#fav-toggle').classList.remove('on');
+    }
+  }
+
+  // ---------- favorite actors ----------
+  async function searchPerson(query){
+    const url = `https://api.themoviedb.org/3/search/person?api_key=${apiKey}&language=de-DE&query=${encodeURIComponent(query)}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('Suche fehlgeschlagen');
+    const data = await res.json();
+    const hit = (data.results||[])[0];
+    if(!hit) return null;
+    return { id:hit.id, name:hit.name, profile:hit.profile_path };
+  }
+  function renderActorList(){
+    const el = $('#actor-list');
+    if(favoriteActors.length===0){
+      el.innerHTML = `<p class="list-empty">Noch niemand eingetragen.</p>`;
+      return;
+    }
+    el.innerHTML = favoriteActors.map((a,i)=>`
+      <div class="wl-item" data-idx="${i}">
+        ${a.profile ? `<img src="${IMG_SMALL}${a.profile}" alt="${a.name}">` : `<div style="width:56px;height:80px;background:var(--surface-alt);border-radius:8px;flex-shrink:0;"></div>`}
+        <div class="wl-body"><h3>${a.name}</h3></div>
+        <button class="wl-remove" data-remove-actor="${i}">×</button>
+      </div>
+    `).join('');
+    el.querySelectorAll('[data-remove-actor]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        favoriteActors.splice(parseInt(btn.dataset.removeActor),1);
+        await saveFavoriteActors();
+        renderActorList();
+        refreshFavToggleVisibility();
+      });
+    });
+  }
+  $('#actor-add').addEventListener('click', async ()=>{
+    const input = $('#actor-input');
+    const status = $('#actor-status');
+    const query = input.value.trim();
+    status.style.display = 'none';
+    if(!query) return;
+    $('#actor-add').disabled = true;
+    try{
+      const person = await searchPerson(query);
+      if(!person){
+        status.textContent = `Niemand gefunden für "${query}".`;
+        status.style.display = 'block';
+      } else if(favoriteActors.some(a=>a.id===person.id)){
+        status.textContent = `${person.name} ist schon in der Liste.`;
+        status.style.display = 'block';
+      } else {
+        favoriteActors.push(person);
+        await saveFavoriteActors();
+        renderActorList();
+        refreshFavToggleVisibility();
+        input.value = '';
+      }
+    }catch(e){
+      status.textContent = 'Suche fehlgeschlagen. Bitte nochmal versuchen.';
+      status.style.display = 'block';
+    }
+    $('#actor-add').disabled = false;
+  });
+
+  // ---------- manually seen titles ----------
+  async function searchTitle(query){
+    const url = `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&language=de-DE&query=${encodeURIComponent(query)}&include_adult=false`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('Suche fehlgeschlagen');
+    const data = await res.json();
+    const hit = (data.results||[]).find(r=>r.media_type==='movie' || r.media_type==='tv');
+    if(!hit) return null;
+    return {
+      id:hit.id,
+      mediaType:hit.media_type,
+      title: hit.media_type==='movie' ? hit.title : hit.name,
+      year: (hit.media_type==='movie' ? hit.release_date : hit.first_air_date || '').slice(0,4),
+      poster: hit.poster_path
+    };
+  }
+  function renderSeenList(){
+    const el = $('#seen-list');
+    if(manualSeen.length===0){
+      el.innerHTML = `<p class="list-empty">Noch nichts eingetragen.</p>`;
+      return;
+    }
+    el.innerHTML = manualSeen.map((it,i)=>`
+      <div class="wl-item" data-idx="${i}">
+        ${it.poster ? `<img src="${IMG_SMALL}${it.poster}" alt="${it.title}">` : `<div style="width:56px;height:80px;background:var(--surface-alt);border-radius:8px;flex-shrink:0;"></div>`}
+        <div class="wl-body">
+          <h3>${it.title}</h3>
+          <p>${it.mediaType==='movie'?'Film':'Serie'}${it.year ? ' · '+it.year : ''}</p>
+        </div>
+        <button class="wl-remove" data-remove-seen="${i}">×</button>
+      </div>
+    `).join('');
+    el.querySelectorAll('[data-remove-seen]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const idx = parseInt(btn.dataset.removeSeen);
+        const it = manualSeen[idx];
+        manualSeen.splice(idx,1);
+        seen = seen.filter(k=>k !== it.mediaType+'-'+it.id);
+        await saveManualSeen();
+        await saveSeen();
+        renderSeenList();
+      });
+    });
+  }
+  $('#seen-add').addEventListener('click', async ()=>{
+    const input = $('#seen-input');
+    const status = $('#seen-status');
+    const query = input.value.trim();
+    status.style.display = 'none';
+    if(!query) return;
+    $('#seen-add').disabled = true;
+    try{
+      const hit = await searchTitle(query);
+      if(!hit){
+        status.textContent = `Nichts gefunden für "${query}".`;
+        status.style.display = 'block';
+      } else if(manualSeen.some(s=>s.id===hit.id && s.mediaType===hit.mediaType)){
+        status.textContent = `${hit.title} ist schon eingetragen.`;
+        status.style.display = 'block';
+      } else {
+        manualSeen.unshift(hit);
+        seen.push(hit.mediaType+'-'+hit.id);
+        await saveManualSeen();
+        await saveSeen();
+        renderSeenList();
+        input.value = '';
+      }
+    }catch(e){
+      status.textContent = 'Suche fehlgeschlagen. Bitte nochmal versuchen.';
+      status.style.display = 'block';
+    }
+    $('#seen-add').disabled = false;
+  });
 
   // ---------- nav ----------
   $$('.nav-btn').forEach(btn=>{
@@ -458,6 +681,17 @@
     }
     return arr;
   }
+  function affinitySort(arr){
+    // Höher bewertete Genres (aus deinem bisherigen Swipe-Verhalten) rutschen im Schnitt weiter nach vorn,
+    // mit etwas Zufall gemischt, damit es nicht eintönig wird.
+    return arr
+      .map(item=>{
+        const score = (item.genreIds||[]).reduce((sum,g)=> sum + (genreScore[g]||0), 0);
+        return { item, sortKey: score + Math.random()*3 };
+      })
+      .sort((a,b)=> b.sortKey - a.sortKey)
+      .map(x=>x.item);
+  }
 
   async function fetchDiscover(mediaType){
     const genreSet = MOOD_GENRES[filters.mood][mediaType];
@@ -466,6 +700,9 @@
     if(genreSet && genreSet.length) url += `&with_genres=${genreSet.join(',')}`;
     const runtime = TIME_RUNTIME[filters.time];
     if(mediaType==='movie' && runtime) url += `&with_runtime.lte=${runtime}`;
+    if(filters.useFavorites && favoriteActors.length){
+      url += `&with_people=${favoriteActors.map(a=>a.id).join('|')}`;
+    }
     const res = await fetch(url);
     if(!res.ok) throw new Error('TMDB Fehler '+res.status);
     const data = await res.json();
@@ -476,7 +713,8 @@
       year: (mediaType==='movie' ? r.release_date : r.first_air_date || '').slice(0,4),
       overview: r.overview,
       poster: r.poster_path,
-      rating: r.vote_average
+      rating: r.vote_average,
+      genreIds: r.genre_ids || []
     })).filter(r=>r.poster && r.title);
   }
 
@@ -495,7 +733,7 @@
         const key = r.mediaType+'-'+r.id;
         return !seenSet.has(key) && !queueSet.has(key);
       });
-      shuffle(results);
+      results = affinitySort(results);
       queue = queue.concat(results);
       if(isFirst) qIndex = 0;
       renderCard();
@@ -604,6 +842,10 @@
     }
     seen.push(item.mediaType+'-'+item.id);
     await saveSeen();
+    (item.genreIds||[]).forEach(g=>{
+      genreScore[g] = (genreScore[g]||0) + direction;
+    });
+    await saveGenreScore();
     if(direction===1){
       watchlist.unshift(item);
       await saveWatchlist();
@@ -643,6 +885,9 @@
   // ---------- init ----------
   (async function init(){
     await loadAll();
+    renderActorList();
+    renderSeenList();
+    refreshFavToggleVisibility();
     if(apiKey){
       $('#nav').classList.add('active');
       showScreen('screen-quiz');

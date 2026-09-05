@@ -322,8 +322,15 @@
       <div class="chip selected" data-value="egal">Egal</div>
     </div>
 
+    <p class="eyebrow" style="margin-bottom:10px;">Erscheinungsjahr</p>
+    <div class="chip-row" data-group="year">
+      <div class="chip selected" data-value="egal">Egal</div>
+      <div class="chip" data-value="klassiker">Klassiker (vor 2000)</div>
+      <div class="chip" data-value="neu">Neuer (ab 2015)</div>
+    </div>
+
     <div class="toggle-row" id="fav-toggle-row" style="display:none;">
-      <span>Bevorzugt meine Favorit:innen</span>
+      <span>Bevorzugt meine Favoriten</span>
       <div class="switch" id="fav-toggle"></div>
     </div>
 
@@ -356,6 +363,15 @@
         <button class="link-btn" id="reset-history">Zurücksetzen</button>
       </div>
     </div>
+    <h2 class="serif" style="font-size:19px; margin:28px 0 12px;">Lieblingsfilme & -serien</h2>
+    <p class="hint" style="margin-bottom:12px;">Die App sucht dann gezielt nach ähnlichen Titeln, wenn der Schalter im Filter aktiv ist.</p>
+    <div class="search-row">
+      <input type="text" id="favtitle-input" placeholder="Titel eingeben">
+      <button class="btn-add" id="favtitle-add">+</button>
+    </div>
+    <div class="search-status" id="favtitle-status" style="display:none;"></div>
+    <div id="favtitle-list"></div>
+
     <h2 class="serif" style="font-size:19px; margin:28px 0 12px;">Lieblings-Schauspieler:innen</h2>
     <p class="hint" style="margin-bottom:12px;">Werden bei „Entdecken" bevorzugt vorgeschlagen, wenn du den Schalter dort aktivierst.</p>
     <div class="search-row">
@@ -400,14 +416,16 @@
     episch:    { movie:[878,14,12], tv:[10765] }
   };
   const TIME_RUNTIME = { kurz:95, mittel:130, egal:null };
+  const YEAR_RANGES = { egal:null, klassiker:{max:1999}, neu:{min:2015} };
 
   let apiKey = null;
   let watchlist = [];
   let seen = [];
   let favoriteActors = [];
+  let favoriteTitles = [];
   let manualSeen = [];
   let genreScore = {};
-  let filters = { type:'both', mood:'entspannt', time:'egal', useFavorites:false };
+  let filters = { type:'both', mood:'entspannt', time:'egal', year:'egal', useFavorites:false };
   let queue = [];
   let qIndex = 0;
   let fetchingMore = false;
@@ -441,6 +459,10 @@
       favoriteActors = raw ? JSON.parse(raw) : [];
     }catch(e){ favoriteActors = []; }
     try{
+      const raw = localStorage.getItem(LS_PREFIX+'favoriteTitles');
+      favoriteTitles = raw ? JSON.parse(raw) : [];
+    }catch(e){ favoriteTitles = []; }
+    try{
       const raw = localStorage.getItem(LS_PREFIX+'manualSeen');
       manualSeen = raw ? JSON.parse(raw) : [];
     }catch(e){ manualSeen = []; }
@@ -460,6 +482,9 @@
   }
   async function saveFavoriteActors(){
     try{ localStorage.setItem(LS_PREFIX+'favoriteActors', JSON.stringify(favoriteActors)); }catch(e){}
+  }
+  async function saveFavoriteTitles(){
+    try{ localStorage.setItem(LS_PREFIX+'favoriteTitles', JSON.stringify(favoriteTitles)); }catch(e){}
   }
   async function saveManualSeen(){
     try{ localStorage.setItem(LS_PREFIX+'manualSeen', JSON.stringify(manualSeen)); }catch(e){}
@@ -513,7 +538,7 @@
   });
   function refreshFavToggleVisibility(){
     const row = $('#fav-toggle-row');
-    if(favoriteActors.length > 0){
+    if(favoriteActors.length > 0 || favoriteTitles.length > 0){
       row.style.display = 'flex';
     } else {
       row.style.display = 'none';
@@ -581,6 +606,61 @@
       status.style.display = 'block';
     }
     $('#actor-add').disabled = false;
+  });
+
+  // ---------- favorite titles ----------
+  function renderFavTitleList(){
+    const el = $('#favtitle-list');
+    if(favoriteTitles.length===0){
+      el.innerHTML = `<p class="list-empty">Noch nichts eingetragen.</p>`;
+      return;
+    }
+    el.innerHTML = favoriteTitles.map((it,i)=>`
+      <div class="wl-item" data-idx="${i}">
+        ${it.poster ? `<img src="${IMG_SMALL}${it.poster}" alt="${it.title}">` : `<div style="width:56px;height:80px;background:var(--surface-alt);border-radius:8px;flex-shrink:0;"></div>`}
+        <div class="wl-body">
+          <h3>${it.title}</h3>
+          <p>${it.mediaType==='movie'?'Film':'Serie'}${it.year ? ' · '+it.year : ''}</p>
+        </div>
+        <button class="wl-remove" data-remove-favtitle="${i}">×</button>
+      </div>
+    `).join('');
+    el.querySelectorAll('[data-remove-favtitle]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        favoriteTitles.splice(parseInt(btn.dataset.removeFavtitle),1);
+        await saveFavoriteTitles();
+        renderFavTitleList();
+        refreshFavToggleVisibility();
+      });
+    });
+  }
+  $('#favtitle-add').addEventListener('click', async ()=>{
+    const input = $('#favtitle-input');
+    const status = $('#favtitle-status');
+    const query = input.value.trim();
+    status.style.display = 'none';
+    if(!query) return;
+    $('#favtitle-add').disabled = true;
+    try{
+      const hit = await searchTitle(query);
+      if(!hit){
+        status.textContent = `Nichts gefunden für "${query}".`;
+        status.style.display = 'block';
+      } else if(favoriteTitles.some(s=>s.id===hit.id && s.mediaType===hit.mediaType)){
+        status.textContent = `${hit.title} ist schon in der Liste.`;
+        status.style.display = 'block';
+      } else {
+        favoriteTitles.unshift(hit);
+        await saveFavoriteTitles();
+        renderFavTitleList();
+        refreshFavToggleVisibility();
+        input.value = '';
+      }
+    }catch(e){
+      status.textContent = 'Suche fehlgeschlagen. Bitte nochmal versuchen.';
+      status.style.display = 'block';
+    }
+    $('#favtitle-add').disabled = false;
   });
 
   // ---------- manually seen titles ----------
@@ -703,6 +783,12 @@
     if(filters.useFavorites && favoriteActors.length){
       url += `&with_people=${favoriteActors.map(a=>a.id).join('|')}`;
     }
+    const yearRange = YEAR_RANGES[filters.year];
+    if(yearRange){
+      const field = mediaType==='movie' ? 'primary_release_date' : 'first_air_date';
+      if(yearRange.min) url += `&${field}.gte=${yearRange.min}-01-01`;
+      if(yearRange.max) url += `&${field}.lte=${yearRange.max}-12-31`;
+    }
     const res = await fetch(url);
     if(!res.ok) throw new Error('TMDB Fehler '+res.status);
     const data = await res.json();
@@ -718,6 +804,32 @@
     })).filter(r=>r.poster && r.title);
   }
 
+  async function fetchRecommendationsFor(favorite){
+    const page = Math.floor(Math.random()*3)+1;
+    const url = `https://api.themoviedb.org/3/${favorite.mediaType}/${favorite.id}/recommendations?api_key=${apiKey}&language=de-DE&page=${page}`;
+    const res = await fetch(url);
+    if(!res.ok) return [];
+    const data = await res.json();
+    return (data.results||[]).map(r=>({
+      id:r.id,
+      mediaType:favorite.mediaType,
+      title: favorite.mediaType==='movie' ? r.title : r.name,
+      year: (favorite.mediaType==='movie' ? r.release_date : r.first_air_date || '').slice(0,4),
+      overview: r.overview,
+      poster: r.poster_path,
+      rating: r.vote_average,
+      genreIds: r.genre_ids || []
+    })).filter(r=>r.poster && r.title);
+  }
+  function matchesYearFilter(item){
+    const yearRange = YEAR_RANGES[filters.year];
+    if(!yearRange || !item.year) return true;
+    const y = parseInt(item.year);
+    if(yearRange.min && y < yearRange.min) return false;
+    if(yearRange.max && y > yearRange.max) return false;
+    return true;
+  }
+
   async function buildQueue(isFirst){
     if(fetchingMore) return;
     fetchingMore = true;
@@ -726,6 +838,14 @@
       const types = filters.type==='both' ? ['movie','tv'] : [filters.type];
       for(const t of types){
         results = results.concat(await fetchDiscover(t));
+      }
+      if(filters.useFavorites && favoriteTitles.length){
+        const candidates = favoriteTitles.filter(f=> filters.type==='both' || f.mediaType===filters.type);
+        if(candidates.length){
+          const pick = candidates[Math.floor(Math.random()*candidates.length)];
+          const recs = await fetchRecommendationsFor(pick);
+          results = results.concat(recs.filter(matchesYearFilter));
+        }
       }
       const seenSet = new Set(seen);
       const queueSet = new Set(queue.map(q=>q.mediaType+'-'+q.id));
@@ -886,6 +1006,7 @@
   (async function init(){
     await loadAll();
     renderActorList();
+    renderFavTitleList();
     renderSeenList();
     refreshFavToggleVisibility();
     if(apiKey){

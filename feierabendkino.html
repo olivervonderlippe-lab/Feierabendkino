@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Feierabendkino</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#12131a;
+    --surface:#1c1e29;
+    --surface-alt:#242736;
+    --line:#31344a;
+    --text:#f3f1ea;
+    --muted:#9497a8;
+    --gold:#e7b24b;
+    --gold-dim:#8a6a2d;
+    --skip:#6b6f8a;
+    --like:#e7b24b;
+    --danger:#c2594f;
+    --radius:20px;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter',system-ui,sans-serif;
+    overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
+  }
+  h1,h2,h3,.serif{font-family:'Fraunces',serif;}
+  #app{
+    position:relative;
+    height:100vh;
+    height:100dvh;
+    display:flex;
+    flex-direction:column;
+  }
+  .screen{
+    flex:1;
+    display:none;
+    flex-direction:column;
+    overflow-y:auto;
+    padding:24px 20px calc(96px + var(--safe-b));
+  }
+  .screen.active{display:flex;}
+
+  /* ---- Shared bits ---- */
+  .eyebrow{color:var(--muted); font-size:14px; margin:0 0 4px;}
+  .title-lg{font-size:28px; font-weight:600; margin:0 0 18px; line-height:1.15;}
+  .card-panel{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:18px;
+  }
+  .chip-row{display:flex; flex-wrap:wrap; gap:10px; margin-bottom:22px;}
+  .chip{
+    background:var(--surface);
+    border:1px solid var(--line);
+    color:var(--text);
+    padding:10px 16px;
+    border-radius:100px;
+    font-size:15px;
+    font-family:'Inter',sans-serif;
+    cursor:pointer;
+    transition:background .15s, border-color .15s;
+  }
+  .chip.selected{
+    background:var(--gold);
+    border-color:var(--gold);
+    color:#1b1503;
+    font-weight:600;
+  }
+  .btn-primary{
+    width:100%;
+    padding:16px;
+    border-radius:14px;
+    border:none;
+    background:var(--gold);
+    color:#1b1503;
+    font-size:16px;
+    font-weight:700;
+    font-family:'Inter',sans-serif;
+    cursor:pointer;
+  }
+  .btn-primary:disabled{opacity:.4;}
+  .btn-ghost{
+    width:100%;
+    padding:14px;
+    border-radius:14px;
+    border:1px solid var(--line);
+    background:transparent;
+    color:var(--text);
+    font-size:15px;
+    font-family:'Inter',sans-serif;
+    cursor:pointer;
+    margin-top:10px;
+  }
+  input[type=text]{
+    width:100%;
+    padding:14px 16px;
+    border-radius:12px;
+    border:1px solid var(--line);
+    background:var(--surface);
+    color:var(--text);
+    font-size:15px;
+    font-family:'Inter',sans-serif;
+    margin-bottom:14px;
+  }
+  a{color:var(--gold);}
+  .error-text{color:var(--danger); font-size:14px; margin:-8px 0 14px;}
+  .hint{color:var(--muted); font-size:14px; line-height:1.5; margin-bottom:18px;}
+
+  /* ---- Setup ---- */
+  #screen-setup{justify-content:center; padding-top:0; padding-bottom:24px;}
+
+  /* ---- Bottom nav ---- */
+  #nav{
+    display:none;
+    position:absolute;
+    left:0; right:0; bottom:0;
+    background:rgba(28,30,41,.92);
+    backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);
+    padding:10px 10px calc(10px + var(--safe-b));
+  }
+  #nav.active{display:flex;}
+  .nav-btn{
+    flex:1;
+    text-align:center;
+    background:none;
+    border:none;
+    color:var(--muted);
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    font-weight:600;
+    padding:8px 4px;
+    cursor:pointer;
+    border-bottom:2px solid transparent;
+  }
+  .nav-btn.active{color:var(--gold); border-bottom-color:var(--gold);}
+
+  /* ---- Swipe screen ---- */
+  #screen-swipe{align-items:center; padding-top:20px;}
+  .deck{
+    position:relative;
+    width:100%;
+    max-width:340px;
+    aspect-ratio:2/3;
+    margin:0 auto;
+  }
+  .movie-card{
+    position:absolute;
+    inset:0;
+    border-radius:var(--radius);
+    overflow:hidden;
+    background:var(--surface);
+    box-shadow:0 20px 40px rgba(0,0,0,.4);
+    touch-action:none;
+    user-select:none;
+  }
+  .movie-card img{
+    width:100%; height:100%; object-fit:cover; display:block;
+    pointer-events:none;
+  }
+  .movie-card .no-poster{
+    width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+    color:var(--muted); padding:20px; text-align:center; font-family:'Fraunces',serif; font-size:20px;
+  }
+  .card-shade{
+    position:absolute; left:0; right:0; bottom:0; top:45%;
+    background:linear-gradient(to bottom, rgba(18,19,26,0) 0%, rgba(18,19,26,.95) 60%, #12131a 100%);
+    pointer-events:none;
+  }
+  .card-info{
+    position:absolute; left:0; right:0; bottom:0; padding:18px;
+  }
+  .card-info h2{font-size:22px; margin:0 0 4px; line-height:1.2;}
+  .card-meta{display:flex; gap:8px; align-items:center; margin-bottom:8px; font-size:13px; color:var(--muted);}
+  .badge{
+    background:var(--surface-alt);
+    border:1px solid var(--line);
+    padding:3px 10px;
+    border-radius:100px;
+  }
+  .card-overview{
+    font-size:13.5px; color:#d8d6ce; line-height:1.45;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .stamp{
+    position:absolute; top:24px; padding:6px 14px; border:3px solid; border-radius:8px;
+    font-family:'Fraunces',serif; font-weight:700; font-size:20px; text-transform:none;
+    opacity:0; transform:rotate(-12deg);
+  }
+  .stamp.like{right:20px; color:var(--gold); border-color:var(--gold);}
+  .stamp.skip{left:20px; color:var(--skip); border-color:var(--skip); transform:rotate(12deg);}
+
+  .swipe-actions{
+    display:flex; gap:16px; margin-top:24px; width:100%; max-width:340px;
+  }
+  .action-btn{
+    flex:1; padding:15px; border-radius:100px; font-family:'Inter',sans-serif; font-weight:600;
+    font-size:15px; cursor:pointer; border:1.5px solid;
+  }
+  .action-btn.skip{background:transparent; border-color:var(--skip); color:var(--skip);}
+  .action-btn.like{background:var(--gold); border-color:var(--gold); color:#1b1503;}
+
+  .empty-state{
+    text-align:center; margin-top:60px; color:var(--muted); padding:0 20px;
+  }
+  .empty-state h3{color:var(--text); margin-bottom:8px;}
+
+  /* ---- Watchlist ---- */
+  .wl-item{
+    display:flex; gap:14px; padding:12px; background:var(--surface); border:1px solid var(--line);
+    border-radius:14px; margin-bottom:12px; align-items:center;
+  }
+  .wl-item img{width:56px; height:80px; object-fit:cover; border-radius:8px; flex-shrink:0; background:var(--surface-alt);}
+  .wl-item .wl-body{flex:1; min-width:0;}
+  .wl-item h3{font-size:16px; margin:0 0 4px; font-family:'Fraunces',serif;}
+  .wl-item p{margin:0; font-size:13px; color:var(--muted);}
+  .wl-remove{
+    background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; padding:6px;
+  }
+
+  /* Settings */
+  .settings-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 0; border-bottom:1px solid var(--line);
+  }
+  .settings-row:last-child{border-bottom:none;}
+  .settings-row span{font-size:15px;}
+  .link-btn{background:none;border:none;color:var(--gold);font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;}
+
+  .spinner{
+    width:22px; height:22px; border-radius:50%;
+    border:3px solid var(--line); border-top-color:var(--gold);
+    animation:spin .7s linear infinite; margin:40px auto;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- SETUP -->
+  <div class="screen active" id="screen-setup">
+    <p class="eyebrow">Feierabendkino</p>
+    <h1 class="title-lg">Nie wieder 40 Minuten scrollen, bevor der Abend vorbei ist.</h1>
+    <p class="hint">
+      Diese App holt sich Film- und Serienvorschläge live von <strong>TMDB</strong> (The Movie Database) — einer kostenlosen, offenen Filmdatenbank. Dafür brauchst du einen eigenen, kostenlosen API-Key:
+    </p>
+    <p class="hint">
+      1. Auf <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a> registrieren (kostenlos)<br>
+      2. Unter "API-Schlüssel (v3 auth)" den Key kopieren<br>
+      3. Hier einfügen
+    </p>
+    <input type="text" id="apikey-input" placeholder="TMDB API-Key einfügen" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="error-text" id="setup-error" style="display:none;"></div>
+    <button class="btn-primary" id="setup-save">Speichern & loslegen</button>
+  </div>
+
+  <!-- QUIZ -->
+  <div class="screen" id="screen-quiz">
+    <p class="eyebrow">Heute Abend</p>
+    <h1 class="title-lg">Worauf hast du Lust?</h1>
+
+    <p class="eyebrow" style="margin-bottom:10px;">Film oder Serie?</p>
+    <div class="chip-row" data-group="type">
+      <div class="chip" data-value="movie">Filme</div>
+      <div class="chip" data-value="tv">Serien</div>
+      <div class="chip selected" data-value="both">Beides</div>
+    </div>
+
+    <p class="eyebrow" style="margin-bottom:10px;">Stimmung</p>
+    <div class="chip-row" data-group="mood">
+      <div class="chip" data-value="entspannt">Entspannt</div>
+      <div class="chip" data-value="lustig">Lustig</div>
+      <div class="chip" data-value="spannend">Spannend</div>
+      <div class="chip" data-value="gruselig">Gruselig</div>
+      <div class="chip" data-value="emotional">Emotional</div>
+      <div class="chip" data-value="episch">Episch</div>
+    </div>
+
+    <p class="eyebrow" style="margin-bottom:10px;">Wie viel Zeit hast du?</p>
+    <div class="chip-row" data-group="time">
+      <div class="chip" data-value="kurz">Unter 1,5 Std</div>
+      <div class="chip" data-value="mittel">Um die 2 Std</div>
+      <div class="chip selected" data-value="egal">Egal</div>
+    </div>
+
+    <button class="btn-primary" id="quiz-start">Vorschläge zeigen</button>
+  </div>
+
+  <!-- SWIPE -->
+  <div class="screen" id="screen-swipe">
+    <div id="swipe-content"></div>
+  </div>
+
+  <!-- WATCHLIST -->
+  <div class="screen" id="screen-watchlist">
+    <p class="eyebrow">Gemerkt</p>
+    <h1 class="title-lg">Deine Merkliste</h1>
+    <div id="watchlist-content"></div>
+  </div>
+
+  <!-- MORE / SETTINGS -->
+  <div class="screen" id="screen-more">
+    <p class="eyebrow">Mehr</p>
+    <h1 class="title-lg">Einstellungen</h1>
+    <div class="card-panel">
+      <div class="settings-row">
+        <span>TMDB API-Key</span>
+        <button class="link-btn" id="change-key">Ändern</button>
+      </div>
+      <div class="settings-row">
+        <span>Bereits gesehene Vorschläge</span>
+        <button class="link-btn" id="reset-history">Zurücksetzen</button>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:18px;">Deine Merkliste und dein Verlauf werden nur auf diesem Gerät gespeichert.</p>
+  </div>
+
+  <div id="nav">
+    <button class="nav-btn" data-screen="screen-quiz">Filter</button>
+    <button class="nav-btn" data-screen="screen-swipe">Entdecken</button>
+    <button class="nav-btn" data-screen="screen-watchlist">Merkliste</button>
+    <button class="nav-btn" data-screen="screen-more">Mehr</button>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const IMG = 'https://image.tmdb.org/t/p/w342';
+  const IMG_SMALL = 'https://image.tmdb.org/t/p/w154';
+
+  const MOOD_GENRES = {
+    entspannt: { movie:[16,10751], tv:[10751,35] },
+    lustig:    { movie:[35], tv:[35] },
+    spannend:  { movie:[53,28], tv:[10759] },
+    gruselig:  { movie:[27], tv:[9648] },
+    emotional: { movie:[18], tv:[18] },
+    episch:    { movie:[878,14,12], tv:[10765] }
+  };
+  const TIME_RUNTIME = { kurz:95, mittel:130, egal:null };
+
+  let apiKey = null;
+  let watchlist = [];
+  let seen = [];
+  let filters = { type:'both', mood:'entspannt', time:'egal' };
+  let queue = [];
+  let qIndex = 0;
+  let fetchingMore = false;
+
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+  function showScreen(id){
+    $$('.screen').forEach(s=>s.classList.remove('active'));
+    $('#'+id).classList.add('active');
+    $$('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.screen===id));
+  }
+
+  // ---------- storage (localStorage — persists per browser/device) ----------
+  const LS_PREFIX = 'feierabendkino:';
+  async function loadAll(){
+    try{
+      const raw = localStorage.getItem(LS_PREFIX+'settings');
+      if(raw) apiKey = JSON.parse(raw).apiKey;
+    }catch(e){}
+    try{
+      const raw = localStorage.getItem(LS_PREFIX+'watchlist');
+      watchlist = raw ? JSON.parse(raw) : [];
+    }catch(e){ watchlist = []; }
+    try{
+      const raw = localStorage.getItem(LS_PREFIX+'seen');
+      seen = raw ? JSON.parse(raw) : [];
+    }catch(e){ seen = []; }
+  }
+  async function saveSettings(){
+    try{ localStorage.setItem(LS_PREFIX+'settings', JSON.stringify({apiKey})); }catch(e){}
+  }
+  async function saveWatchlist(){
+    try{ localStorage.setItem(LS_PREFIX+'watchlist', JSON.stringify(watchlist)); }catch(e){}
+  }
+  async function saveSeen(){
+    try{ localStorage.setItem(LS_PREFIX+'seen', JSON.stringify(seen)); }catch(e){}
+  }
+
+  // ---------- setup ----------
+  $('#setup-save').addEventListener('click', async ()=>{
+    const val = $('#apikey-input').value.trim();
+    const errEl = $('#setup-error');
+    errEl.style.display='none';
+    if(!val){ errEl.textContent='Bitte einen Key einfügen.'; errEl.style.display='block'; return; }
+    $('#setup-save').disabled = true;
+    $('#setup-save').textContent = 'Prüfe Key…';
+    try{
+      const res = await fetch(`https://api.themoviedb.org/3/genre/movie/list?api_key=${val}&language=de-DE`);
+      if(!res.ok) throw new Error('invalid');
+      apiKey = val;
+      await saveSettings();
+      $('#nav').classList.add('active');
+      showScreen('screen-quiz');
+    }catch(e){
+      errEl.textContent = 'Der Key scheint ungültig zu sein. Bitte auf themoviedb.org/settings/api prüfen.';
+      errEl.style.display='block';
+    }
+    $('#setup-save').disabled = false;
+    $('#setup-save').textContent = 'Speichern & loslegen';
+  });
+
+  // ---------- quiz ----------
+  $$('.chip-row').forEach(row=>{
+    row.addEventListener('click', e=>{
+      const chip = e.target.closest('.chip');
+      if(!chip) return;
+      row.querySelectorAll('.chip').forEach(c=>c.classList.remove('selected'));
+      chip.classList.add('selected');
+      filters[row.dataset.group] = chip.dataset.value;
+    });
+  });
+  $('#quiz-start').addEventListener('click', ()=>{
+    queue = []; qIndex = 0;
+    showScreen('screen-swipe');
+    renderLoading();
+    buildQueue(true);
+  });
+
+  // ---------- nav ----------
+  $$('.nav-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=> showScreen(btn.dataset.screen));
+  });
+  $('#change-key').addEventListener('click', ()=>{
+    $('#nav').classList.remove('active');
+    $('#apikey-input').value = apiKey || '';
+    showScreen('screen-setup');
+  });
+  $('#reset-history').addEventListener('click', async ()=>{
+    seen = [];
+    await saveSeen();
+    $('#reset-history').textContent = 'Erledigt';
+    setTimeout(()=>{ $('#reset-history').textContent='Zurücksetzen'; }, 1200);
+  });
+
+  // ---------- fetching ----------
+  function shuffle(arr){
+    for(let i=arr.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]] = [arr[j],arr[i]];
+    }
+    return arr;
+  }
+
+  async function fetchDiscover(mediaType){
+    const genreSet = MOOD_GENRES[filters.mood][mediaType];
+    const page = Math.floor(Math.random()*6)+1;
+    let url = `https://api.themoviedb.org/3/discover/${mediaType}?api_key=${apiKey}&language=de-DE&sort_by=popularity.desc&include_adult=false&page=${page}`;
+    if(genreSet && genreSet.length) url += `&with_genres=${genreSet.join(',')}`;
+    const runtime = TIME_RUNTIME[filters.time];
+    if(mediaType==='movie' && runtime) url += `&with_runtime.lte=${runtime}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('TMDB Fehler '+res.status);
+    const data = await res.json();
+    return (data.results||[]).map(r=>({
+      id:r.id,
+      mediaType,
+      title: mediaType==='movie' ? r.title : r.name,
+      year: (mediaType==='movie' ? r.release_date : r.first_air_date || '').slice(0,4),
+      overview: r.overview,
+      poster: r.poster_path,
+      rating: r.vote_average
+    })).filter(r=>r.poster && r.title);
+  }
+
+  async function buildQueue(isFirst){
+    if(fetchingMore) return;
+    fetchingMore = true;
+    try{
+      let results = [];
+      const types = filters.type==='both' ? ['movie','tv'] : [filters.type];
+      for(const t of types){
+        results = results.concat(await fetchDiscover(t));
+      }
+      const seenSet = new Set(seen);
+      const queueSet = new Set(queue.map(q=>q.mediaType+'-'+q.id));
+      results = results.filter(r=>{
+        const key = r.mediaType+'-'+r.id;
+        return !seenSet.has(key) && !queueSet.has(key);
+      });
+      shuffle(results);
+      queue = queue.concat(results);
+      if(isFirst) qIndex = 0;
+      renderCard();
+    }catch(e){
+      renderError(e.message);
+    }
+    fetchingMore = false;
+  }
+
+  // ---------- swipe screen render ----------
+  function renderLoading(){
+    $('#swipe-content').innerHTML = '<div class="spinner"></div><p style="text-align:center;color:var(--muted)">Suche passende Titel…</p>';
+  }
+  function renderError(msg){
+    $('#swipe-content').innerHTML = `<div class="empty-state"><h3>Da ist etwas schiefgelaufen</h3><p>${msg}</p></div>`;
+  }
+  function renderEmpty(){
+    $('#swipe-content').innerHTML = `
+      <div class="empty-state">
+        <h3>Keine weiteren Treffer</h3>
+        <p>Für diese Kombination ist gerade nichts Neues da. Passe die Filter an oder versuch es nochmal.</p>
+      </div>
+      <button class="btn-primary" id="empty-refilter" style="margin-top:20px;">Filter anpassen</button>
+      <button class="btn-ghost" id="empty-retry">Nochmal versuchen</button>
+    `;
+    $('#empty-refilter').addEventListener('click', ()=> showScreen('screen-quiz'));
+    $('#empty-retry').addEventListener('click', ()=>{ renderLoading(); buildQueue(false); });
+  }
+
+  function renderCard(){
+    if(qIndex >= queue.length){
+      if(!fetchingMore) renderEmpty();
+      return;
+    }
+    const item = queue[qIndex];
+    const posterHtml = item.poster
+      ? `<img src="${IMG}${item.poster}" alt="${item.title}">`
+      : `<div class="no-poster">${item.title}</div>`;
+
+    $('#swipe-content').innerHTML = `
+      <div class="deck">
+        <div class="movie-card" id="active-card">
+          ${posterHtml}
+          <div class="card-shade"></div>
+          <div class="stamp like" id="stamp-like">Merken</div>
+          <div class="stamp skip" id="stamp-skip">Nicht heute</div>
+          <div class="card-info">
+            <div class="card-meta">
+              <span class="badge">${item.mediaType==='movie'?'Film':'Serie'}</span>
+              ${item.year ? `<span class="badge">${item.year}</span>` : ''}
+              ${item.rating ? `<span class="badge">${item.rating.toFixed(1)} / 10</span>` : ''}
+            </div>
+            <h2>${item.title}</h2>
+            <p class="card-overview">${item.overview || 'Keine Beschreibung verfügbar.'}</p>
+          </div>
+        </div>
+      </div>
+      <div class="swipe-actions">
+        <button class="action-btn skip" id="btn-skip">Nicht heute</button>
+        <button class="action-btn like" id="btn-like">Merken</button>
+      </div>
+    `;
+    attachSwipe();
+    $('#btn-skip').addEventListener('click', ()=> commit(-1));
+    $('#btn-like').addEventListener('click', ()=> commit(1));
+
+    if(queue.length - qIndex <= 3) buildQueue(false);
+  }
+
+  function attachSwipe(){
+    const card = $('#active-card');
+    if(!card) return;
+    let startX=0, dx=0, dragging=false;
+
+    card.addEventListener('pointerdown', e=>{
+      dragging = true; startX = e.clientX;
+      card.setPointerCapture(e.pointerId);
+      card.style.transition = 'none';
+    });
+    card.addEventListener('pointermove', e=>{
+      if(!dragging) return;
+      dx = e.clientX - startX;
+      card.style.transform = `translateX(${dx}px) rotate(${dx/18}deg)`;
+      $('#stamp-like').style.opacity = Math.max(0, Math.min(1, dx/110));
+      $('#stamp-skip').style.opacity = Math.max(0, Math.min(1, -dx/110));
+    });
+    function end(){
+      if(!dragging) return;
+      dragging = false;
+      card.style.transition = 'transform .25s ease';
+      if(dx > 100) commit(1);
+      else if(dx < -100) commit(-1);
+      else { card.style.transform=''; $('#stamp-like').style.opacity=0; $('#stamp-skip').style.opacity=0; }
+      dx = 0;
+    }
+    card.addEventListener('pointerup', end);
+    card.addEventListener('pointercancel', end);
+  }
+
+  async function commit(direction){
+    const card = $('#active-card');
+    const item = queue[qIndex];
+    if(card){
+      card.style.transition = 'transform .3s ease';
+      card.style.transform = `translateX(${direction*500}px) rotate(${direction*24}deg)`;
+    }
+    seen.push(item.mediaType+'-'+item.id);
+    await saveSeen();
+    if(direction===1){
+      watchlist.unshift(item);
+      await saveWatchlist();
+    }
+    qIndex++;
+    setTimeout(renderCard, 180);
+  }
+
+  // ---------- watchlist ----------
+  function renderWatchlist(){
+    const el = $('#watchlist-content');
+    if(watchlist.length===0){
+      el.innerHTML = `<div class="empty-state"><h3>Noch nichts gemerkt</h3><p>Wisch dich unter "Entdecken" durch ein paar Vorschläge — was dir gefällt, landet hier.</p></div>`;
+      return;
+    }
+    el.innerHTML = watchlist.map((item, i)=>`
+      <div class="wl-item" data-idx="${i}">
+        ${item.poster ? `<img src="${IMG_SMALL}${item.poster}" alt="${item.title}">` : `<div style="width:56px;height:80px;background:var(--surface-alt);border-radius:8px;flex-shrink:0;"></div>`}
+        <div class="wl-body">
+          <h3>${item.title}</h3>
+          <p>${item.mediaType==='movie'?'Film':'Serie'}${item.year ? ' · '+item.year : ''}${item.rating ? ' · '+item.rating.toFixed(1) : ''}</p>
+        </div>
+        <button class="wl-remove" data-remove="${i}">×</button>
+      </div>
+    `).join('');
+    el.querySelectorAll('[data-remove]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const idx = parseInt(btn.dataset.remove);
+        watchlist.splice(idx,1);
+        await saveWatchlist();
+        renderWatchlist();
+      });
+    });
+  }
+  document.querySelector('[data-screen="screen-watchlist"]').addEventListener('click', renderWatchlist);
+
+  // ---------- init ----------
+  (async function init(){
+    await loadAll();
+    if(apiKey){
+      $('#nav').classList.add('active');
+      showScreen('screen-quiz');
+    }
+  })();
+})();
+</script>
+</body>
+</html>
